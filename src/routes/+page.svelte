@@ -6,35 +6,48 @@
   let gamma = $state(null);
 
   let number = $state('-');
-  let message = $state('Click Start Sensor');
+  let message = $state('Press Start Sensor');
+
+  let x = $state(0);
+  let y = $state(0);
+  let z = $state(0);
+
   let shaking = false;
   let lastPosition = null;
   let positionTime = 0;
   let lastRoll = 0;
+  let lastForce = 0;
 
   function handleOrientation(event) {
-    alpha = event.alpha === null ? null : Math.round(event.alpha);
-    beta = event.beta === null ? null : Math.round(event.beta);
-    gamma = event.gamma === null ? null : Math.round(event.gamma);
+    alpha = event.alpha == null ? null : Math.round(event.alpha);
+    beta = event.beta == null ? null : Math.round(event.beta);
+    gamma = event.gamma == null ? null : Math.round(event.gamma);
   }
 
   function handleMotion(event) {
     const g = event.accelerationIncludingGravity;
     if (g?.x == null || g?.y == null || g?.z == null) return;
 
-    const { x, y, z } = g;
-    const a = event.acceleration;
+    x = Math.round(g.x);
+    y = Math.round(g.y);
+    z = Math.round(g.z);
 
     // Detect shaking
+    const a = event.acceleration;
+
     const force = a?.x != null && a?.y != null && a?.z != null
       ? Math.hypot(a.x, a.y, a.z)
-      : Math.abs(Math.hypot(x, y, z) - 9.8);
+      : Math.hypot(g.x - xPrevious, g.y - yPrevious, g.z - zPrevious);
 
-    if (!shaking && Date.now() - lastRoll > 1000 && force > 13) {
+    xPrevious = g.x;
+    yPrevious = g.y;
+    zPrevious = g.z;
+
+    if (force > 6 && Date.now() - lastRoll > 1000) {
       shaking = true;
       number = '-';
       lastPosition = null;
-      message = 'Shake detected! Hold your phone in a position.';
+      message = 'Shake detected! Hold your phone still.';
     }
 
     if (!shaking) return;
@@ -42,14 +55,14 @@
     // Detect the six sides
     let position = null;
 
-    if (z > 7.5 && Math.abs(x) < 5 && Math.abs(y) < 5) position = 6;
-    else if (z < -7.5 && Math.abs(x) < 5 && Math.abs(y) < 5) position = 1;
-    else if (x < -7.5 && Math.abs(y) < 5 && Math.abs(z) < 5) position = 2;
-    else if (x > 7.5 && Math.abs(y) < 5 && Math.abs(z) < 5) position = 5;
-    else if (y > 7.5 && Math.abs(x) < 5 && Math.abs(z) < 5) position = 3;
-    else if (y < -7.5 && Math.abs(x) < 5 && Math.abs(z) < 5) position = 4;
+    if (g.z > 7) position = 6;
+    else if (g.z < -7) position = 1;
+    else if (g.x < -7) position = 2;
+    else if (g.x > 7) position = 5;
+    else if (g.y > 7) position = 3;
+    else if (g.y < -7) position = 4;
 
-    // Wait until the position is stable
+    // Check if the phone stays in one position
     if (position !== lastPosition) {
       lastPosition = position;
       positionTime = Date.now();
@@ -63,6 +76,10 @@
     }
   }
 
+  let xPrevious = 0;
+  let yPrevious = 0;
+  let zPrevious = 0;
+
   async function startSensor() {
     if (!window.isSecureContext) {
       message = 'HTTPS is required.';
@@ -70,31 +87,35 @@
     }
 
     if (!('DeviceMotionEvent' in window)) {
-      message = 'Motion sensors are not supported.';
+      message = 'Motion sensors not supported.';
       return;
     }
 
     try {
-      if (typeof DeviceMotionEvent.requestPermission === 'function') {
-        if (await DeviceMotionEvent.requestPermission() !== 'granted') {
-          message = 'Permission denied.';
-          return;
-        }
-      }
+      // Request both permissions directly from the button click
+      const motion = typeof DeviceMotionEvent.requestPermission === 'function'
+        ? DeviceMotionEvent.requestPermission()
+        : Promise.resolve('granted');
 
-      if (typeof DeviceOrientationEvent !== 'undefined' &&
-          typeof DeviceOrientationEvent.requestPermission === 'function') {
-        if (await DeviceOrientationEvent.requestPermission() !== 'granted') {
-          message = 'Permission denied.';
-          return;
-        }
+      const orientation = typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function'
+        ? DeviceOrientationEvent.requestPermission()
+        : Promise.resolve('granted');
+
+      const [motionResult, orientationResult] = await Promise.all([motion, orientation]);
+
+      if (motionResult !== 'granted') {
+        message = 'Motion permission denied.';
+        return;
       }
 
       window.removeEventListener('devicemotion', handleMotion);
       window.removeEventListener('deviceorientation', handleOrientation);
 
       window.addEventListener('devicemotion', handleMotion);
-      window.addEventListener('deviceorientation', handleOrientation);
+      if (orientationResult === 'granted') {
+        window.addEventListener('deviceorientation', handleOrientation);
+      }
 
       message = 'Ready! Shake your phone.';
     } catch {
@@ -131,6 +152,10 @@
     <p>Alpha: {alpha ?? '-'}</p>
     <p>Beta: {beta ?? '-'}</p>
     <p>Gamma: {gamma ?? '-'}</p>
+
+    <p class="mt-4">X: {x}</p>
+    <p>Y: {y}</p>
+    <p>Z: {z}</p>
   </div>
 
 </div>
