@@ -6,11 +6,11 @@
   let gamma = $state(null);
   let message = $state('');
 
-  function handleDeviceOrientation(event) {
-    alpha = event.alpha;
-    beta = event.beta;
-    gamma = event.gamma;
-  }
+ function handleDeviceOrientation(event) {
+  alpha = event.alpha === null ? null : Math.round(event.alpha);
+  beta = event.beta === null ? null : Math.round(event.beta);
+  gamma = event.gamma === null ? null : Math.round(event.gamma);
+}
 
   async function startSensor() {
     if (!window.isSecureContext) {
