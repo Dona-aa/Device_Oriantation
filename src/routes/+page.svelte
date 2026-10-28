@@ -5,18 +5,18 @@
   let beta = $state(null);
   let gamma = $state(null);
 
-  let number = $state('-');
-  let message = $state('Press Start Sensor');
+  let x = $state(null);
+  let y = $state(null);
+  let z = $state(null);
 
-  let x = $state(0);
-  let y = $state(0);
-  let z = $state(0);
+  let number = $state('-');
+  let message = $state('Click Start Sensor');
 
   let shaking = false;
   let lastPosition = null;
   let positionTime = 0;
   let lastRoll = 0;
-  let lastForce = 0;
+  let previous = null;
 
   function handleOrientation(event) {
     alpha = event.alpha == null ? null : Math.round(event.alpha);
@@ -32,18 +32,17 @@
     y = Math.round(g.y);
     z = Math.round(g.z);
 
-    // Detect shaking
-    const a = event.acceleration;
+    if (message === 'Waiting for sensor data...') {
+      message = 'Ready! Shake your phone.';
+    }
 
-    const force = a?.x != null && a?.y != null && a?.z != null
-      ? Math.hypot(a.x, a.y, a.z)
-      : Math.hypot(g.x - xPrevious, g.y - yPrevious, g.z - zPrevious);
+    const force = previous
+      ? Math.hypot(g.x - previous.x, g.y - previous.y, g.z - previous.z)
+      : 0;
 
-    xPrevious = g.x;
-    yPrevious = g.y;
-    zPrevious = g.z;
+    previous = { x: g.x, y: g.y, z: g.z };
 
-    if (force > 6 && Date.now() - lastRoll > 1000) {
+    if (force > 5 && Date.now() - lastRoll > 1000) {
       shaking = true;
       number = '-';
       lastPosition = null;
@@ -52,7 +51,6 @@
 
     if (!shaking) return;
 
-    // Detect the six sides
     let position = null;
 
     if (g.z > 7) position = 6;
@@ -62,7 +60,6 @@
     else if (g.y > 7) position = 3;
     else if (g.y < -7) position = 4;
 
-    // Check if the phone stays in one position
     if (position !== lastPosition) {
       lastPosition = position;
       positionTime = Date.now();
@@ -72,54 +69,43 @@
       number = position;
       shaking = false;
       lastRoll = Date.now();
-      message = 'Shake again to roll!';
+      message = 'Shake again!';
     }
   }
 
-  let xPrevious = 0;
-  let yPrevious = 0;
-  let zPrevious = 0;
-
   async function startSensor() {
+    message = 'Starting sensors...';
+
     if (!window.isSecureContext) {
-      message = 'HTTPS is required.';
+      message = 'HTTPS required!';
       return;
     }
 
-    if (!('DeviceMotionEvent' in window)) {
-      message = 'Motion sensors not supported.';
+    if (!window.DeviceMotionEvent) {
+      message = 'Motion sensors not supported!';
       return;
     }
 
     try {
-      // Request both permissions directly from the button click
-      const motion = typeof DeviceMotionEvent.requestPermission === 'function'
-        ? DeviceMotionEvent.requestPermission()
-        : Promise.resolve('granted');
+      // Ask permission on iPhone
+      if (typeof window.DeviceMotionEvent.requestPermission === 'function') {
+        const result = await window.DeviceMotionEvent.requestPermission();
 
-      const orientation = typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function'
-        ? DeviceOrientationEvent.requestPermission()
-        : Promise.resolve('granted');
-
-      const [motionResult, orientationResult] = await Promise.all([motion, orientation]);
-
-      if (motionResult !== 'granted') {
-        message = 'Motion permission denied.';
-        return;
+        if (result !== 'granted') {
+          message = 'Permission denied!';
+          return;
+        }
       }
 
       window.removeEventListener('devicemotion', handleMotion);
-      window.removeEventListener('deviceorientation', handleOrientation);
-
       window.addEventListener('devicemotion', handleMotion);
-      if (orientationResult === 'granted') {
-        window.addEventListener('deviceorientation', handleOrientation);
-      }
 
-      message = 'Ready! Shake your phone.';
-    } catch {
-      message = 'Could not access sensors.';
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.addEventListener('deviceorientation', handleOrientation);
+
+      message = 'Waiting for sensor data...';
+    } catch (error) {
+      message = 'Error: ' + error.message;
     }
   }
 
@@ -139,7 +125,7 @@
     {number}
   </div>
 
-  <p class="text-center">{message}</p>
+  <p class="text-center font-semibold">{message}</p>
 
   <button
     onclick={startSensor}
@@ -148,14 +134,16 @@
     Start Sensor
   </button>
 
-  <div class="text-center text-gray-500">
+  <div class="text-center text-gray-600">
     <p>Alpha: {alpha ?? '-'}</p>
     <p>Beta: {beta ?? '-'}</p>
     <p>Gamma: {gamma ?? '-'}</p>
 
-    <p class="mt-4">X: {x}</p>
-    <p>Y: {y}</p>
-    <p>Z: {z}</p>
+    <div class="mt-4">
+      <p>X: {x ?? '-'}</p>
+      <p>Y: {y ?? '-'}</p>
+      <p>Z: {z ?? '-'}</p>
+    </div>
   </div>
 
 </div>
